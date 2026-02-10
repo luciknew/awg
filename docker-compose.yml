@@ -15,7 +15,7 @@ services:
     ports:
       - 555:555/udp
     volumes:
-      - awg-data:/etc/wireguard
+      - ./awg-data:/etc/wireguard
     environment:
       - WG_PORT=555
       - PORT=51821
