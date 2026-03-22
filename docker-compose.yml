@@ -11,15 +11,16 @@ services:
       - SYS_MODULE
       - NET_ADMIN
     expose:
-      - 51821
+      - ${UI_PORT}
     ports:
-      - 555:555/udp
+      - ${UI_PORT}:${UI_PORT}
+      - ${WG_PORT}:${WG_PORT}/udp
     volumes:
       - ./awg-data:/etc/wireguard
     environment:
-      - WG_PORT=555
-      - PORT=51821
-      - PASSWORD_HASH=$$2a$$12$$jBwGVbHxPZikyffXhuFXGeHrITokZmVrB1wW86Uhtmf6S1sShdX92
+      - WG_PORT=${WG_PORT}
+      - PORT=${UI_PORT}
+      - PASSWORD_HASH=${PASSWORD_HASH}
       - WG_HOST=${IPADDR}
       - LANG=ru
       - WG_DEFAULT_ADDRESS=10.25.13.x
@@ -27,32 +28,3 @@ services:
       - WG_ENABLE_EXPIRES_TIME=true
       - UI_TRAFFIC_STATS=true
     container_name: awg
-
-  caddy:
-    image: caddy
-    ports:
-      - 80:80
-      - 443:443
-    volumes:
-      - caddy-data:/data
-      - caddy-config:/config
-    entrypoint: |
-      sh -c "cat > /etc/caddy/Caddyfile << 'EOF'
-      {
-          admin off
-      }
-      
-      https:// {
-          reverse_proxy awg:51821
-          tls internal {
-              on_demand
-              }
-      }
-      EOF
-      caddy run --config /etc/caddy/Caddyfile"
-    container_name: caddy-awg
-
-volumes:
-  awg-data:
-  caddy-config:
-  caddy-data:

@@ -1,6 +1,0 @@
-https:// {
-        reverse_proxy awg:51821
-        tls internal {
-                on_demand
-        }
-}
