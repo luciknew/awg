@@ -75,8 +75,8 @@ info "Исходники веб-панели: ${VENDOR_DIR}"
 # ==============================================
 header "Параметры"
 
-# Внешний адрес
-DEFAULT_IP=$(curl -s --max-time 5 https://ifconfig.me 2>/dev/null || curl -s --max-time 5 https://api.ipify.org 2>/dev/null || echo "")
+# Внешний адрес (только IPv4 — туннели в этом проекте v4)
+DEFAULT_IP=$(curl -4 -s --max-time 5 https://ifconfig.me 2>/dev/null || curl -4 -s --max-time 5 https://api.ipify.org 2>/dev/null || echo "")
 read -rp "Домен или внешний IP [$DEFAULT_IP]: " WG_HOST
 WG_HOST="${WG_HOST:-$DEFAULT_IP}"
 [ -z "$WG_HOST" ] && error "Нужен внешний IP/домен" && exit 1

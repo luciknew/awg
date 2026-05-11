@@ -65,8 +65,24 @@ tun_status() {
 }
 
 # Валидация имени туннеля (разрешено для имени интерфейса Linux)
+# IFNAMSIZ=16 (с null) → максимум 15 символов
+# Первый символ — буква, дальше буквы/цифры/_/-
 valid_name() {
-  [[ "$1" =~ ^[a-zA-Z][a-zA-Z0-9_-]{0,14}$ ]]
+  local n="$1"
+  if [ -z "$n" ]; then
+    echo "пусто"; return 1
+  fi
+  if [ "${#n}" -gt 15 ]; then
+    echo "слишком длинное (${#n}, максимум 15 — ограничение Linux)"
+    return 1
+  fi
+  if [[ ! "$n" =~ ^[a-zA-Z] ]]; then
+    echo "должно начинаться с буквы"; return 1
+  fi
+  if [[ ! "$n" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+    echo "разрешены только буквы, цифры, '-' и '_'"; return 1
+  fi
+  return 0
 }
 
 # Конвертация IP в число
@@ -123,11 +139,38 @@ subnet_conflict() {
   done
 }
 
-# Получить публичный IP этой машины
+# Получить публичный IPv4 этой машины
+# Приоритет:
+#   1. WG_HOST из /etc/amnezia-wg-easy/env (то что юзер указал при install.sh)
+#      — если домен, резолвим в IPv4; если IPv4 — берём как есть; IPv6 — пропускаем
+#   2. curl ifconfig.me -4
+#   3. локальный IP с дефолтного интерфейса
 my_public_ip() {
-  curl -s --max-time 3 https://ifconfig.me 2>/dev/null \
-    || curl -s --max-time 3 https://api.ipify.org 2>/dev/null \
-    || ip route get 1.1.1.1 2>/dev/null | awk '{print $7; exit}'
+  local wg_env="/etc/amnezia-wg-easy/env"
+  if [ -f "$wg_env" ]; then
+    local wh
+    wh=$(grep -E '^WG_HOST=' "$wg_env" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '"' | tr -d "'")
+    if [ -n "$wh" ]; then
+      # Если это IPv4 — вернуть как есть
+      if [[ "$wh" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        echo "$wh"; return
+      fi
+      # Если IPv6 — игнор, идём дальше
+      if [[ "$wh" == *:* ]]; then :
+      else
+        # Иначе считаем что это домен — резолвим в IPv4
+        local resolved
+        resolved=$(getent ahostsv4 "$wh" 2>/dev/null | awk '{print $1; exit}')
+        if [ -n "$resolved" ]; then
+          echo "$resolved"; return
+        fi
+      fi
+    fi
+  fi
+
+  curl -4 -s --max-time 3 https://ifconfig.me 2>/dev/null \
+    || curl -4 -s --max-time 3 https://api.ipify.org 2>/dev/null \
+    || ip -4 route get 1.1.1.1 2>/dev/null | awk '{print $7; exit}'
 }
 
 # SSH wrapper (sshpass + порт)
@@ -228,11 +271,11 @@ cmd_add() {
   ensure_sshpass
 
   # 1. Имя
-  local name
+  local name reason
   while true; do
-    read -rp "Имя туннеля (a-z, 0-9, -, _; до 15 символов): " name
-    if ! valid_name "$name"; then
-      warn "Некорректное имя"
+    read -rp "Имя туннеля (буквы/цифры/-/_; до 15 символов, начало — буква): " name
+    if ! reason=$(valid_name "$name"); then
+      warn "Некорректное имя: $reason"
       continue
     fi
     if [ -f "${TUNNELS_DIR}/${name}.env" ]; then
@@ -247,15 +290,20 @@ cmd_add() {
   done
 
   # 2. Тип
-  local type
+  local type type_num
+  echo "Тип туннеля:"
+  echo "  1) ipip"
+  echo "  2) gre"
   while true; do
-    read -rp "Тип туннеля (ipip/gre) [ipip]: " type
-    type="${type:-ipip}"
-    case "$type" in
-      ipip|gre) break ;;
-      *) warn "Только ipip или gre" ;;
+    read -rp "Выбор [1]: " type_num
+    type_num="${type_num:-1}"
+    case "$type_num" in
+      1) type="ipip"; break ;;
+      2) type="gre";  break ;;
+      *) warn "Введи 1 или 2" ;;
     esac
   done
+  info "Тип: $type"
 
   # 3. Адрес удалённой машины
   local remote_ip
@@ -281,13 +329,16 @@ cmd_add() {
   fi
   info "SSH работает"
 
-  # 6. Локальный публичный IP
-  local default_local
-  default_local=$(my_public_ip)
+  # 6. Локальный публичный IP — автоопределение
   local local_ip
-  read -rp "Публичный IP этой машины (для туннеля) [$default_local]: " local_ip
-  local_ip="${local_ip:-$default_local}"
-  [ -z "$local_ip" ] && error "Нужен публичный IP" && return 1
+  local_ip=$(my_public_ip)
+  if [ -z "$local_ip" ]; then
+    error "Не удалось определить публичный IPv4 этой машины"
+    read -rp "Введи вручную: " local_ip
+    [ -z "$local_ip" ] && return 1
+  else
+    info "Публичный IPv4 этой машины: $local_ip"
+  fi
 
   # 7. Подсеть /30
   local tun_net tun_local tun_remote
