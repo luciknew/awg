@@ -23,6 +23,18 @@ fi
 
 TUNNELS_DIR="/etc/awg-tunnels"
 DEFAULT_FILE="${TUNNELS_DIR}/default"
+APPLY_DEFAULT="/usr/local/sbin/awg-tunnel-apply-default"
+# Запасной путь — если запускаем из репо
+[ -x "$APPLY_DEFAULT" ] || APPLY_DEFAULT="$(dirname "$0")/templates/apply-default.sh"
+
+# Применить policy routing (вызов apply-default)
+apply_default_routing() {
+  if [ -x "$APPLY_DEFAULT" ]; then
+    "$APPLY_DEFAULT"
+  else
+    bash "$APPLY_DEFAULT" 2>/dev/null || warn "apply-default не найден"
+  fi
+}
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
 info()  { echo -e "${GREEN}✓${NC} $1"; }
@@ -209,6 +221,41 @@ ssh_apply_remote_up() {
     -T "${REMOTE_USER}@${REMOTE_IP}" \
     "NAME='${NAME}' TYPE='${TYPE}' LOCAL_IP='${LOCAL_IP}' REMOTE_IP='${REMOTE_IP}' TUN_LOCAL='${TUN_LOCAL}' TUN_REMOTE='${TUN_REMOTE}' TUN_PREFIX='${TUN_PREFIX}' bash -s" \
     < "$remote_up_path"
+}
+
+# Интерактивный выбор туннеля из списка по номеру.
+# Эхо в stderr (чтобы не попало в stdout), на stdout — выбранное имя.
+# Если туннелей нет — вернёт 1.
+pick_tunnel() {
+  local prompt="${1:-Выбери туннель}"
+  local names
+  names=$(list_names)
+  if [ -z "$names" ]; then
+    error "Туннелей нет — используй: $0 add"
+    return 1
+  fi
+
+  echo "$prompt:" >&2
+  local i=0
+  local -a name_arr=()
+  while IFS= read -r n; do
+    [ -z "$n" ] && continue
+    i=$((i + 1))
+    name_arr+=("$n")
+    local mark=""
+    [ "$n" = "$(current_default)" ] && mark="(default)"
+    echo "  $i) $n $mark" >&2
+  done <<< "$names"
+  echo >&2
+
+  local num
+  read -rp "Номер [1]: " num </dev/tty >&2
+  num="${num:-1}"
+  if ! [[ "$num" =~ ^[0-9]+$ ]] || [ "$num" -lt 1 ] || [ "$num" -gt "${#name_arr[@]}" ]; then
+    error "Неверный номер"
+    return 1
+  fi
+  echo "${name_arr[$((num - 1))]}"
 }
 
 ssh_apply_remote_down() {
@@ -411,10 +458,11 @@ EOF
     warn "Логи: journalctl -u awg-tunnel@${name} -n 20 --no-pager"
   fi
 
-  # 12. Дефолт если первый туннель
+  # 12. Дефолт если первый туннель — применяем routing
   if [ -z "$(current_default)" ]; then
     echo "$name" > "$DEFAULT_FILE"
-    info "Установлен как дефолтный туннель"
+    info "Установлен как дефолтный туннель — применяю routing..."
+    apply_default_routing
   fi
 
   echo
@@ -423,7 +471,9 @@ EOF
 
 cmd_remove() {
   local name="$1"
-  [ -z "$name" ] && error "укажи имя: $0 remove <name>" && return 1
+  if [ -z "$name" ]; then
+    name=$(pick_tunnel "Какой туннель удалить") || return 1
+  fi
 
   local env_file="${TUNNELS_DIR}/${name}.env"
   [ ! -f "$env_file" ] && error "Туннель '$name' не найден" && return 1
@@ -440,10 +490,11 @@ cmd_remove() {
   ensure_sshpass
   ssh_apply_remote_down "$env_file"
 
-  # Если был дефолтным — сбросить
+  # Если был дефолтным — сбросить + переприменить routing (теперь без дефолта)
   if [ "$(current_default)" = "$name" ]; then
     rm -f "$DEFAULT_FILE"
     warn "Дефолтный туннель сброшен (был '$name')"
+    apply_default_routing
   fi
 
   rm -f "$env_file"
@@ -452,7 +503,9 @@ cmd_remove() {
 
 cmd_edit() {
   local name="$1"
-  [ -z "$name" ] && error "укажи имя: $0 edit <name>" && return 1
+  if [ -z "$name" ]; then
+    name=$(pick_tunnel "Какой туннель редактировать") || return 1
+  fi
 
   local env_file="${TUNNELS_DIR}/${name}.env"
   [ ! -f "$env_file" ] && error "Туннель '$name' не найден" && return 1
@@ -470,7 +523,9 @@ cmd_edit() {
 
 cmd_test() {
   local name="$1"
-  [ -z "$name" ] && error "укажи имя: $0 test <name>" && return 1
+  if [ -z "$name" ]; then
+    name=$(pick_tunnel "Какой туннель проверить") || return 1
+  fi
 
   local env_file="${TUNNELS_DIR}/${name}.env"
   [ ! -f "$env_file" ] && error "Туннель '$name' не найден" && return 1
@@ -495,10 +550,12 @@ cmd_default() {
     return 1
   fi
 
+  # Своя версия выбора с опцией "0 = убрать дефолт"
   echo "Выбери дефолтный туннель (через него потом будет уходить трафик):"
   local i=0
   local -a name_arr=()
   while IFS= read -r n; do
+    [ -z "$n" ] && continue
     i=$((i + 1))
     name_arr+=("$n")
     local mark=""
@@ -508,10 +565,12 @@ cmd_default() {
   echo "  0) убрать дефолт"
   echo
 
+  local num
   read -rp "Номер: " num
   if [ "$num" = "0" ]; then
     rm -f "$DEFAULT_FILE"
-    info "Дефолт сброшен"
+    info "Дефолт сброшен — применяю routing..."
+    apply_default_routing
     return 0
   fi
   if ! [[ "$num" =~ ^[0-9]+$ ]] || [ "$num" -lt 1 ] || [ "$num" -gt "${#name_arr[@]}" ]; then
@@ -521,7 +580,8 @@ cmd_default() {
 
   local chosen="${name_arr[$((num - 1))]}"
   echo "$chosen" > "$DEFAULT_FILE"
-  info "Дефолтный туннель: $chosen"
+  info "Дефолтный туннель: $chosen — применяю routing..."
+  apply_default_routing
 }
 
 # -------------------------------------------------
@@ -540,9 +600,9 @@ AWG tunnels manager
 
   $0 list                — список туннелей и статус
   $0 add                 — интерактивно создать туннель
-  $0 remove <name>       — удалить туннель
-  $0 edit <name>         — пересоздать туннель (remove + add)
-  $0 test <name>         — ping проверка
+  $0 remove [<name>]     — удалить туннель (без имени — выбор по номеру)
+  $0 edit   [<name>]     — пересоздать туннель (без имени — выбор по номеру)
+  $0 test   [<name>]     — ping проверка   (без имени — выбор по номеру)
   $0 default             — выбрать дефолтный туннель
 
 Конфиги: ${TUNNELS_DIR}/<name>.env

@@ -332,19 +332,23 @@ mkdir -p /etc/awg-tunnels
 chmod 700 /etc/awg-tunnels
 
 # Копируем скрипты
-install -m 755 "$SCRIPT_DIR/tunnel.sh"                     /usr/local/sbin/awg-tunnel
-install -m 755 "$SCRIPT_DIR/templates/tunnel-up.sh"        /usr/local/sbin/awg-tunnel-up
-install -m 755 "$SCRIPT_DIR/templates/tunnel-down.sh"      /usr/local/sbin/awg-tunnel-down
-install -m 755 "$SCRIPT_DIR/templates/tunnel-remote-up.sh" /usr/local/sbin/awg-tunnel-remote-up.sh
+install -m 755 "$SCRIPT_DIR/tunnel.sh"                       /usr/local/sbin/awg-tunnel
+install -m 755 "$SCRIPT_DIR/templates/tunnel-up.sh"          /usr/local/sbin/awg-tunnel-up
+install -m 755 "$SCRIPT_DIR/templates/tunnel-down.sh"        /usr/local/sbin/awg-tunnel-down
+install -m 755 "$SCRIPT_DIR/templates/tunnel-remote-up.sh"   /usr/local/sbin/awg-tunnel-remote-up.sh
 install -m 755 "$SCRIPT_DIR/templates/tunnel-remote-down.sh" /usr/local/sbin/awg-tunnel-remote-down.sh
+install -m 755 "$SCRIPT_DIR/templates/apply-default.sh"      /usr/local/sbin/awg-tunnel-apply-default
 
 # systemd template
 install -m 644 "$SCRIPT_DIR/templates/awg-tunnel.service" /etc/systemd/system/awg-tunnel@.service
 systemctl daemon-reload
 
-# Зависимости для управления (sshpass — нужен tunnel.sh add)
-if ! command -v sshpass >/dev/null 2>&1; then
-  apt-get install -y -qq sshpass >/dev/null 2>&1 || true
+# Зависимости для управления (sshpass — нужен tunnel.sh add; conntrack — для flush сессий при смене дефолта)
+NEED_PKGS=()
+command -v sshpass    >/dev/null 2>&1 || NEED_PKGS+=(sshpass)
+command -v conntrack  >/dev/null 2>&1 || NEED_PKGS+=(conntrack)
+if [ "${#NEED_PKGS[@]}" -gt 0 ]; then
+  apt-get install -y -qq "${NEED_PKGS[@]}" >/dev/null 2>&1 || true
 fi
 
 info "awg-tunnel установлен в /usr/local/sbin/"
