@@ -7,12 +7,12 @@
 # Дефолтный туннель: /etc/awg-tunnels/default (содержит имя)
 #
 # Команды:
-#   awg-tunnel list             — список + статус
-#   awg-tunnel add              — интерактивно создать новый
-#   awg-tunnel remove <name>    — удалить
-#   awg-tunnel edit <name>      — изменить параметры
-#   awg-tunnel test <name>      — проверить ping
-#   awg-tunnel default          — выбрать дефолтный (для будущей маршрутизации)
+#   awg-tunnel list                  — список + статус
+#   awg-tunnel add                   — интерактивно создать новый
+#   awg-tunnel remove [<name>]       — удалить (без имени — выбор по номеру)
+#   awg-tunnel edit   [<name>]       — пересоздать
+#   awg-tunnel test   [<name>]       — ping
+#   awg-tunnel default               — выбрать дефолтный + применить policy routing
 # ============================================
 set -e
 
