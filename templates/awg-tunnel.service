@@ -1,0 +1,13 @@
+[Unit]
+Description=AWG tunnel %i
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/awg-tunnel-up %i
+ExecStop=/usr/local/sbin/awg-tunnel-down %i
+
+[Install]
+WantedBy=multi-user.target

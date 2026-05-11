@@ -323,6 +323,42 @@ else
 fi
 
 # ==============================================
+# 13. Tunnel manager (IPIP/GRE к удалённым машинам)
+# ==============================================
+header "Tunnel manager"
+
+# Подсистема туннелей
+mkdir -p /etc/awg-tunnels
+chmod 700 /etc/awg-tunnels
+
+# Копируем скрипты
+install -m 755 "$SCRIPT_DIR/tunnel.sh"                     /usr/local/sbin/awg-tunnel
+install -m 755 "$SCRIPT_DIR/templates/tunnel-up.sh"        /usr/local/sbin/awg-tunnel-up
+install -m 755 "$SCRIPT_DIR/templates/tunnel-down.sh"      /usr/local/sbin/awg-tunnel-down
+install -m 755 "$SCRIPT_DIR/templates/tunnel-remote-up.sh" /usr/local/sbin/awg-tunnel-remote-up.sh
+install -m 755 "$SCRIPT_DIR/templates/tunnel-remote-down.sh" /usr/local/sbin/awg-tunnel-remote-down.sh
+
+# systemd template
+install -m 644 "$SCRIPT_DIR/templates/awg-tunnel.service" /etc/systemd/system/awg-tunnel@.service
+systemctl daemon-reload
+
+# Зависимости для управления (sshpass — нужен tunnel.sh add)
+if ! command -v sshpass >/dev/null 2>&1; then
+  apt-get install -y -qq sshpass >/dev/null 2>&1 || true
+fi
+
+info "awg-tunnel установлен в /usr/local/sbin/"
+info "Используй:  sudo awg-tunnel add | list | remove | test | default"
+echo
+
+# Предложение добавить туннель прямо сейчас
+read -rp "Добавить туннель к удалённой машине сейчас? [y/N]: " ADD_NOW
+if [[ "$ADD_NOW" =~ ^[Yy]$ ]]; then
+  echo
+  /usr/local/sbin/awg-tunnel add || warn "Добавление туннеля прервано — можешь повторить позже: sudo awg-tunnel add"
+fi
+
+# ==============================================
 # Готово
 # ==============================================
 header "Готово!"
@@ -331,13 +367,19 @@ echo "  Веб-панель: http://${WG_HOST}:${UI_PORT}"
 echo "  AWG порт:   ${WG_PORT}/udp"
 echo "  Подсеть:    ${WG_SUBNET}"
 echo
-echo "  Управление:"
+echo "  Управление AWG:"
 echo "    systemctl status $SERVICE_NAME"
 echo "    journalctl -u $SERVICE_NAME -f"
 echo "    cat $ENV_FILE"
 echo
+echo "  Управление туннелями:"
+echo "    sudo awg-tunnel list      # список туннелей"
+echo "    sudo awg-tunnel add       # добавить туннель"
+echo "    sudo awg-tunnel default   # выбрать дефолтный"
+echo
 echo "  Файлы:"
-echo "    Код:       $APP_DIR"
-echo "    Конфиги:   /etc/amnezia/amneziawg/wg0.conf, /etc/amnezia/amneziawg/wg0.json"
-echo "    Параметры: $ENV_FILE"
+echo "    Код:        $APP_DIR"
+echo "    AWG конфиг: /etc/amnezia/amneziawg/wg0.conf"
+echo "    Параметры:  $ENV_FILE"
+echo "    Туннели:    /etc/awg-tunnels/*.env"
 echo
