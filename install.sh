@@ -91,9 +91,19 @@ UI_PORT="${UI_PORT:-51821}"
 info "WG: $WG_PORT/udp, UI: $UI_PORT/tcp"
 
 # Подсеть клиентов
-read -rp "Подсеть клиентов [10.25.13.x]: " WG_SUBNET
-WG_SUBNET="${WG_SUBNET:-10.25.13.x}"
-info "Подсеть: $WG_SUBNET"
+# Пользователь вводит в формате 10.25.13.0/24 (или просто 10.25.13.0).
+# Внутри код веб-панели работает с форматом 'N.N.N.x' — конвертируем.
+while true; do
+  read -rp "Подсеть клиентов /24 [10.25.13.0/24]: " WG_SUBNET_INPUT
+  WG_SUBNET_INPUT="${WG_SUBNET_INPUT:-10.25.13.0/24}"
+  # Принимаем форматы: 10.25.13.0/24 или 10.25.13.0
+  if [[ "$WG_SUBNET_INPUT" =~ ^([0-9]+\.[0-9]+\.[0-9]+)\.0(/24)?$ ]]; then
+    WG_SUBNET="${BASH_REMATCH[1]}.x"
+    break
+  fi
+  warn "Неверный формат. Нужно как '10.25.13.0/24' (последний октет = 0, маска /24 опционально)"
+done
+info "Подсеть: ${WG_SUBNET_INPUT%/*}/24 (внутренний формат: $WG_SUBNET)"
 
 # Язык
 read -rp "Язык веб-панели (en/ru) [ru]: " UI_LANG
@@ -246,11 +256,12 @@ WEBUI_HOST=0.0.0.0
 LANG=${UI_LANG}
 PASSWORD_HASH=${PASSWORD_HASH}
 
-# WireGuard
+# WireGuard / AmneziaWG
 WG_HOST=${WG_HOST}
 WG_PORT=${WG_PORT}
 WG_DEVICE=${WG_DEVICE}
-WG_PATH=/etc/wireguard/
+# awg-quick по умолчанию ищет конфиг здесь, поэтому используем именно этот путь
+WG_PATH=/etc/amnezia/amneziawg/
 WG_DEFAULT_ADDRESS=${WG_SUBNET}
 WG_DEFAULT_DNS=1.1.1.1
 WG_ALLOWED_IPS=0.0.0.0/0
@@ -327,6 +338,6 @@ echo "    cat $ENV_FILE"
 echo
 echo "  Файлы:"
 echo "    Код:       $APP_DIR"
-echo "    Конфиги:   /etc/wireguard/wg0.conf, /etc/wireguard/wg0.json"
+echo "    Конфиги:   /etc/amnezia/amneziawg/wg0.conf, /etc/amnezia/amneziawg/wg0.json"
 echo "    Параметры: $ENV_FILE"
 echo
