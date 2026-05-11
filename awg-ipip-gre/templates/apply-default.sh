@@ -93,8 +93,10 @@ echo "[apply-default] применяю: WG ($WG_SUBNET) → $NAME → $TUN_REMOT
 # default route в нашей таблице
 ip route add default via "$TUN_REMOTE" dev "$NAME" table "$ROUTE_TABLE"
 
-# ip rule: трафик от WG подсети → наша таблица
-ip rule add from "$WG_SUBNET" table "$ROUTE_TABLE" priority "$RULE_PRIO"
+# ip rule: трафик пришедший через wg0 → наша таблица
+# (важно: НЕ "from $WG_SUBNET" — иначе ответы сервера со своего адреса
+#  10.X.X.1 тоже улетят в туннель, и iperf3/SSH к 10.X.X.1 ломаются)
+ip rule add iif wg0 table "$ROUTE_TABLE" priority "$RULE_PRIO"
 
 # MASQUERADE для WG-трафика через туннель (с комментарием для идемпотентности)
 iptables -t nat -A POSTROUTING -s "$WG_SUBNET" -o "$NAME" -j MASQUERADE -m comment --comment "$IPT_COMMENT"

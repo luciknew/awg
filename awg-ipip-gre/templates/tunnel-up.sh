@@ -51,7 +51,17 @@ ip link set "$NAME" up mtu 1450
 # Маршрут на peer
 ip route replace "${TUN_REMOTE}/32" dev "$NAME" 2>/dev/null || true
 
-echo "[tunnel-up:$NAME] $NAME up"
+# MSS clamping — иначе TCP-сессии через туннель страдают от фрагментации/PMTUD
+# Чистим старое (по комментарию) и добавляем свежее, идемпотентно.
+IPT_MSS_COMMENT="awg-tunnel-mss-${NAME}"
+while iptables -t mangle -L FORWARD -n --line-numbers 2>/dev/null | grep -q "$IPT_MSS_COMMENT"; do
+  n=$(iptables -t mangle -L FORWARD -n --line-numbers | grep "$IPT_MSS_COMMENT" | head -1 | awk '{print $1}')
+  iptables -t mangle -D FORWARD "$n" 2>/dev/null || break
+done
+iptables -t mangle -A FORWARD -o "$NAME" -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu -m comment --comment "$IPT_MSS_COMMENT"
+iptables -t mangle -A FORWARD -i "$NAME" -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu -m comment --comment "$IPT_MSS_COMMENT"
+
+echo "[tunnel-up:$NAME] $NAME up (mtu 1450, MSS clamped)"
 
 # Проверка связи (несколько попыток — модуль ядра / другая сторона может не сразу подняться)
 for i in 1 2 3 4 5; do

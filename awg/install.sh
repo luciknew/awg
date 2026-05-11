@@ -278,14 +278,13 @@ info "Параметры: $ENV_FILE"
 # 10. sysctl (forwarding)
 # ==============================================
 SYSCTL_FILE=/etc/sysctl.d/99-amnezia-wg.conf
-# BBR + fq на default qdisc + большие буфера + MTU probing
-# Без этого на lossy путях (туннели в чужой ДЦ) cubic деградирует в 10-50 раз.
+# BBR + fq + большие буфера + MTU probing — лучше на lossy путях
 modprobe tcp_bbr 2>/dev/null || true
 echo "tcp_bbr" > /etc/modules-load.d/tcp_bbr.conf
 cat > "$SYSCTL_FILE" << 'EOF'
 net.ipv4.ip_forward=1
 net.ipv4.conf.all.src_valid_mark=1
-# TCP tuning для lossy путей (BBR + fq + большие буфера)
+# TCP tuning (BBR + fq + большие буфера)
 net.core.default_qdisc=fq
 net.ipv4.tcp_congestion_control=bbr
 net.ipv4.tcp_mtu_probing=1
@@ -335,46 +334,6 @@ else
 fi
 
 # ==============================================
-# 13. Tunnel manager (IPIP/GRE к удалённым машинам)
-# ==============================================
-header "Tunnel manager"
-
-# Подсистема туннелей
-mkdir -p /etc/awg-tunnels
-chmod 700 /etc/awg-tunnels
-
-# Копируем скрипты
-install -m 755 "$SCRIPT_DIR/tunnel.sh"                       /usr/local/sbin/awg-tunnel
-install -m 755 "$SCRIPT_DIR/templates/tunnel-up.sh"          /usr/local/sbin/awg-tunnel-up
-install -m 755 "$SCRIPT_DIR/templates/tunnel-down.sh"        /usr/local/sbin/awg-tunnel-down
-install -m 755 "$SCRIPT_DIR/templates/tunnel-remote-up.sh"   /usr/local/sbin/awg-tunnel-remote-up.sh
-install -m 755 "$SCRIPT_DIR/templates/tunnel-remote-down.sh" /usr/local/sbin/awg-tunnel-remote-down.sh
-install -m 755 "$SCRIPT_DIR/templates/apply-default.sh"      /usr/local/sbin/awg-tunnel-apply-default
-
-# systemd template
-install -m 644 "$SCRIPT_DIR/templates/awg-tunnel.service" /etc/systemd/system/awg-tunnel@.service
-systemctl daemon-reload
-
-# Зависимости для управления (sshpass — нужен tunnel.sh add; conntrack — для flush сессий при смене дефолта)
-NEED_PKGS=()
-command -v sshpass    >/dev/null 2>&1 || NEED_PKGS+=(sshpass)
-command -v conntrack  >/dev/null 2>&1 || NEED_PKGS+=(conntrack)
-if [ "${#NEED_PKGS[@]}" -gt 0 ]; then
-  apt-get install -y -qq "${NEED_PKGS[@]}" >/dev/null 2>&1 || true
-fi
-
-info "awg-tunnel установлен в /usr/local/sbin/"
-info "Используй:  sudo awg-tunnel add | list | remove | test | default"
-echo
-
-# Предложение добавить туннель прямо сейчас
-read -rp "Добавить туннель к удалённой машине сейчас? [y/N]: " ADD_NOW
-if [[ "$ADD_NOW" =~ ^[Yy]$ ]]; then
-  echo
-  /usr/local/sbin/awg-tunnel add || warn "Добавление туннеля прервано — можешь повторить позже: sudo awg-tunnel add"
-fi
-
-# ==============================================
 # Готово
 # ==============================================
 header "Готово!"
@@ -383,19 +342,17 @@ echo "  Веб-панель: http://${WG_HOST}:${UI_PORT}"
 echo "  AWG порт:   ${WG_PORT}/udp"
 echo "  Подсеть:    ${WG_SUBNET}"
 echo
-echo "  Управление AWG:"
-echo "    systemctl status $SERVICE_NAME"
-echo "    journalctl -u $SERVICE_NAME -f"
-echo "    cat $ENV_FILE"
-echo
-echo "  Управление туннелями:"
-echo "    sudo awg-tunnel list      # список туннелей"
-echo "    sudo awg-tunnel add       # добавить туннель"
-echo "    sudo awg-tunnel default   # выбрать дефолтный"
+echo "  Управление:"
+echo "    sudo systemctl status $SERVICE_NAME"
+echo "    sudo journalctl -u $SERVICE_NAME -f"
+echo "    sudo cat $ENV_FILE"
 echo
 echo "  Файлы:"
 echo "    Код:        $APP_DIR"
 echo "    AWG конфиг: /etc/amnezia/amneziawg/wg0.conf"
+echo "    Клиенты:    /etc/amnezia/amneziawg/wg0.json"
 echo "    Параметры:  $ENV_FILE"
-echo "    Туннели:    /etc/awg-tunnels/*.env"
+echo
+echo "  Эта установка БЕЗ туннелей к exit-нодам."
+echo "  Маршрутизация трафика — задача роутера (NAT, mangle и т.п.)."
 echo
