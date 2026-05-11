@@ -1,0 +1,8 @@
+# Запущенный проект, не коммитим
+node_modules/
+*.log
+
+# Локальные креды
+mercury
+credentials*
+*.local

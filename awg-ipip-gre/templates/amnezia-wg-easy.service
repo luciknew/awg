@@ -1,0 +1,20 @@
+[Unit]
+Description=AmneziaWG web UI (amnezia-wg-easy)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=__APP_DIR__/src
+EnvironmentFile=__ENV_FILE__
+ExecStart=/usr/bin/node server.js
+Restart=on-failure
+RestartSec=5
+User=root
+LimitNOFILE=65535
+
+# AWG/wg-quick требует root для управления интерфейсом и /etc/wireguard
+# Не сужаем capabilities — wg-quick это bash который дёргает iptables и т.д.
+
+[Install]
+WantedBy=multi-user.target
