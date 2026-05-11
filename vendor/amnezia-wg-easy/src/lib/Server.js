@@ -406,8 +406,9 @@ module.exports = class Server {
         return { success: true };
       }));
 
-    // Static assets
-    const publicDir = '/app/www';
+    // Static assets — путь относительно расположения файла (src/lib → src/www)
+    // Работает и в Docker (/app/www), и при установке на хост.
+    const publicDir = process.env.WWW_DIR || resolve(__dirname, '..', 'www');
     app.use(
       defineEventHandler((event) => {
         return serveStatic(event, {
